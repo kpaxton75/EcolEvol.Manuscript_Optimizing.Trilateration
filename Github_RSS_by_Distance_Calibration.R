@@ -9,7 +9,10 @@
 ##         -- At each test location a transmitter was held stationary for a 5-minute time period 
 ##            -- Removed first and last minute of each test to ensure that times matched between tests and the node network
 ##            -- For each test, calculated an average RSS value for the 3-min middle time period individually for each node that detected the transmitter
-##
+##      -- Data for this analysis published at: https://doi.org/10.5066/P94LQWIE 
+##          -- Datafile called: RSS.Localization.PaperDataset.csv 
+##             -- Data associated with this test is coded as 'A' in the column 'DataSet'
+
 ##
 ##    1st step: Data preparation - isolates raw RSS data from node network that is associated with test data - creates the published data file - RSS.Localization.PaperDataset.csv
 ##    2nd step: Exponential Decay Model - uses the dataset created in step 1 to examine the relationship between RSS values and distance
