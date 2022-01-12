@@ -5,17 +5,16 @@
 ##  April 1 2021
 ##
 ##    Code to examine the relationship between RSS values and distance for a given study area using an exponential decay model
-##      -- Based on data from a test dataset of a radio transmitter at 135 known locations distributed throughout the Guam Network 
+##      -- Analysis in Ecology and Evolution Paper is based on data from a test with of a radio transmitter at 135 known locations distributed throughout the Guam Network 
 ##         -- At each test location a transmitter was held stationary for a 5-minute time period 
 ##            -- Removed first and last minute of each test to ensure that times matched between tests and the node network
 ##            -- For each test, calculated an average RSS value for the 3-min middle time period individually for each node that detected the transmitter
-##      -- Data for this analysis published at: https://doi.org/10.5066/P94LQWIE 
-##          -- Datafile called: RSS.Localization.PaperDataset.csv 
-##             -- Data associated with this test is coded as 'A' in the column 'DataSet'
-
+##        
 ##
-##    1st step: Data preparation - isolates raw RSS data from node network that is associated with test data - creates the published data file - RSS.Localization.PaperDataset.csv
-##    2nd step: Exponential Decay Model - uses the dataset created in step 1 to examine the relationship between RSS values and distance
+##    1st step: Data preparation - isolates raw RSS data from node network that is associated with test data 
+##      -- Creates the data file that was published with this paper at: https://doi.org/10.5066/P94LQWIE 
+##            -- Data associated with this test is coded as 'A' in the column 'DataSet'
+##    2nd step: Exponential Decay Model - uses the dataset created in step 1 to examine the relationship between RSS values and distance for a node network
 ##
 ##
 ##    Files Needed
@@ -74,6 +73,7 @@ library(ggplot2)
 # Reset R's brain - removes all previous objects
 rm(list=ls())
 
+
 ## Set by User
 # Working Directory - Provide/path/on/your/computer/where/master/csv/file/of/nodes/is/found/and/where/Functions_CTT.Network.R/is/located
 working.directory <- " add here "
@@ -90,13 +90,13 @@ source("Functions_RSS.Based.Localizations.R")
 
 
 ## Bring in 3 Needed files - Test Information, RSS values, and Node Information - change file names in " " as needed
-test.info <- read.csv("Test.Info.csv", header = T)
+test.info <- read.csv("Test.Info_Example.csv", header = T)
 str(test.info) # check that data imported properly
 
-beep.dat <- readRDS("BeepData.rds") 
+beep.dat <- readRDS("BeepData_Example.rds") 
 str(beep.dat) # check that data imported properly
 
-nodes <- read.csv("Nodes.csv", header = T)
+nodes <- read.csv("Nodes_Example.csv", header = T)
 str(nodes)
 
 
@@ -110,25 +110,38 @@ str(nodes)
 #################################################################
 
     ## Variables to define for function
+        ## TEST.TYPE = category indicating the type of dataset
+            ## "Calibration" - test dataset used for calibrating the relationship between RSS and Distance (purpose of this R script)
+            ## "LocError" - test data used to determine localization error associated with RSS-based localization estimates for a node network
         ## DATE.FORMAT = format of the date column in Test.Info.csv file using R standard date expressions (e.g., "%m-%d-%y", "%Y-%m-%d")
         ## TIMEZONE = Time zone where data was collected, use grep("<insert location name here>", OlsonNames(), value=TRUE) to find valid time zone name
 
 
     ## Output in R environment
         ## combined.data - dataframe that contains the average RSS values for a given node associated with each unique test
-
+            ## Columns:
+                ## NodeId - unique identifier of the specified node
+                ## TestId - unique identifier of the specified test
+                ## avgRSS - average RSS value across a 3-min time period for the given node and test
+                ## sdRSS - standard deviation of RSS values across the 3-min time period for the given node and test
+                ## distance - true distance (in meters) between the specified node and test location
+                ## NodeUTMx - Easting location of the specified node
+                ## NodeUTMy - Northing location of the specified node
+                ## TestUTMx - Easting location of the specified test
+                ## TestUTMy - Northing location of the specified test
 
     ## Output saved
-        ## RSS.Localization.PaperDataset.csv - same dataframe saved in the R environment is also saved in the folder specified by the outpath
+        ## Calibration_Dataset.csv - .csv file of the dataframe 'combine.data' saved in the folder specified by the outpath
 
 
 ##******* Define Variables - replace values below with user specified values *******## 
+TEST.TYPE <- "Calibration"
 DATE.FORMAT <- "%m/%d/%y"
 TIME.ZONE <- "Pacific/Guam"
 
 
 # Combine RSS data from a node network with test information into a dataframe
-combined.data <- data.setup(DATE.FORMAT, TIME.ZONE)
+combined.data <- data.setup(TEST.TYPE, DATE.FORMAT, TIME.ZONE)
 
 
 
@@ -139,9 +152,6 @@ combined.data <- data.setup(DATE.FORMAT, TIME.ZONE)
 # Exponential Decay Function to Examine Relationship 
 # between distance and Tag RSS values 
 ##########################################################
-
-# Use the dataset created above or bring in a file with the data
-#combined.data <- read.csv("RSS.Localization.PaperDataset.csv")
 
 
 ## Visualize data
@@ -170,7 +180,7 @@ exp(coef(exp.mod)[["lrc"]])
 
 
 
-## Exponential Decay Final Model with user provided self-starting values 
+## Final Exponential Decay Model with user provided self-starting values 
 ## based on visualization of the data and values in the Preliminary Model Output
 
     # exponential model formula: avgRSS ~ a * exp(-S * distance) + K
@@ -190,7 +200,8 @@ nls.mod <- nls(avgRSS ~ a * exp(-S * distance) + K, start = list(a = a, S = S, K
                data = combined.data)
   # Model Summary
 summary(nls.mod)
-  # Model Coefficients - *you will use these coefficient values to estimate distance based on RSS value in Github_Simulations.R*
+  # Model Coefficients 
+    # **** you will use these coefficient values to estimate distance in Github_TestDataset_LocalizationError.R and Github_Simulations.R scripts *****
 coef(nls.mod)
 
 
@@ -211,7 +222,7 @@ combined.data$pred <- predict(nls.mod)
 
 
 ## Save Final Dataset with Residuals and Predictions
-write.csv(combined.data, paste0(outpath, "RSS.Localization.PaperDataset_withResiduals_Predictions.csv"),
+write.csv(combined.data, paste0(outpath, "Calibration_Dataset_withResiduals_Predictions.csv"),
           row.names = F)
 
 
