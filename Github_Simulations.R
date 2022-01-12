@@ -11,7 +11,7 @@
 ##      
 ##
 ##    Files Needed
-##        1. RSS.Localization.PaperDataset.csv that is saved in the working directory defined below
+##        1. Calibration_Dataset.csv that is saved in the working directory defined below
 ##            - Test dataset used to calibrate RSS by Distance relationship
 ##            - File was created in Github_RSS_by_Distance_Calibration.R script 
 ##            - File MUST have the two following olumns:
@@ -52,7 +52,7 @@ source("Functions_RSS.Based.Localizations.R")
 
 
 ## Bring Needed File - RSS by Distance Calibration Data - - change file name in " " as needed
-combined.data <- read.csv("RSS.Localization.PaperDataset.csv")
+combined.data <- read.csv("Calibration_Dataset.csv", header = T)
 
 
 
@@ -119,8 +119,8 @@ create.node.config(SIZE)
                   ## TestId - unique identifier indicating the random point location and the simulation
 
     ## Output saved
-        ## Simulated.rss.values_ - same dataframe in R environment save as an .rds file in your outpath with the spacing of the nodes 
-        ##                          indicated at the end of the name (e.g., Simulated.rss.values_250m.rds)
+        ## Simulated.rss.values_ - .rds file of 'random.rssi_results.all.sim' file in specified outpath with the spacing of the nodes in the name
+        ##                          indicated at the end of the file name (e.g., Simulated.rss.values_250m.rds)
 
 
 ##******** Define Variables - replace values below with user specified values ********##  
@@ -139,9 +139,9 @@ random.rss_results.all.sim <- get.RSS.values(NUM.SIM, a, S, K)
 
 
 ########################################################################################
-# Trilateration - No filter
+# Trilateration of Simulated Data - No filter
     # Function that will estimate the location of each random point in the
-    # simulated dataset when no filters are applied prior to trilateration anaysis
+    # simulated dataset with no filters applied prior to trilateration analysis
 #######################################################################################
 
     ## Output in Console
@@ -149,7 +149,7 @@ random.rss_results.all.sim <- get.RSS.values(NUM.SIM, a, S, K)
             ## Total number of potential location estimates = 100 random points x NUM.SIM 
 
     ## Output in R environment
-        ## no.filters - dataframe that contains the overall localization error when no filters are applied prior to trilateration 
+        ## no.filters - dataframe that contains the average localization error when no filters are applied prior to trilateration 
             ## Columns
                 ## n.pts - number of random points a location estimate could be calculated based on trilateration 
                 ## avg.no.sim - average number of simulations for each random point when a location estimate could be calculated based on trilateration 
@@ -165,16 +165,16 @@ random.rss_results.all.sim <- get.RSS.values(NUM.SIM, a, S, K)
                 ## filter - filter applied prior to trilateration analysis
 
     ## Output saved
-        ## Trilateration.Simulation_NoFilters_Summary.Stats.csv - .csv file of the same dataframe returned in the R environment 
-        ## Trilateration.Simulation_NoFilter_Summary.Results.csv - dataframe that has the summary statistics of localization error of when no filter  
-                                                                   ## was applied prior to trilateration. Each row represents the summary statistics 
-                                                                   ## for all simulations for a given random point. Files are for your reference 
+        ## Trilateration.Simulation_NoFilters_Summary.Stats.csv - .csv file of the dataframe 'No.filters' saved in the folder specified by the outpath
+        ## Trilateration.Simulation_NoFilter_Summary.Results.csv - .csv file that has the summary statistics of localization error of when no filter  
+        ##                                                          was applied prior to trilateration. Each row represents the summary statistics 
+        ##                                                          for all simulations for a given random point. Files are for your reference 
 
 
 
 
 # Estimate locations of 100 random points when no filters are applied prior to trilateration 
-no.filters <- trilateration.NoFilter(random.rss_results.all.sim)
+no.filters <- trilateration.Sim.NoFilter(random.rss_results.all.sim)
 
 
  
@@ -202,10 +202,10 @@ no.filters <- trilateration.NoFilter(random.rss_results.all.sim)
 
 
    ## Output saved
-        ## Trilateration.Simulation_Filters.RSS_Summary.Stats.csv - .csv file of the same dataframe returned in the R environment 
-        ## _Filters.RSS_Summary.Results.csv - 4 dataframes - one .csv file for each RSS filter that has the summary statistics of localization error 
-                                                ## when the specified filter was applied prior to trilateration. Each row represents the summary  
-                                                ## statistics for all simulations for a given random point. Files are for your reference. 
+        ## Trilateration.Simulation_Filters.RSS_Summary.Stats.csv - .csv file of the dataframe 'RSS.filters' saved in the folder specified by the outpath 
+        ## _Filters.RSS_Summary.Results.csv - 4 .csv file each with the RSS filter name in the title that has the summary statistics of localization error 
+        ##                                    when the specified filter was applied prior to trilateration. Each row represents the summary statistics
+        ##                                    for all simulations for a given random point. Files are for your reference. 
 
 
 
@@ -215,7 +215,7 @@ RSS.FILTER <- c(-80, -85, -90, -95)
 
 
 # Estimate locations of 100 random points when RSS filters are applied prior to trilateration 
-RSS.filters <- trilateration.RSS.Filter(random.rss_results.all.sim)
+RSS.filters <- trilateration.Sim.RSS.Filter(random.rss_results.all.sim)
 
 
 
@@ -239,10 +239,10 @@ RSS.filters <- trilateration.RSS.Filter(random.rss_results.all.sim)
 
 
    ## Output saved
-        ## Trilateration.Simulation_Filters.Distance_Summary.Stats.csv - .csv file of the same dataframe returned in the R environment 
-        ## Filters.Distance_Summary.Results.csv - 4 dataframes - .csv file for each Distance filter that has the summary statistics of localization error 
-                                                                ## when the specified filter was applied prior to trilateration. Each row represents the summary 
-                                                                ## statistics for all simulations for a given random point. Files are for your reference. 
+        ## Trilateration.Simulation_Filters.Distance_Summary.Stats.csv - .csv file of the dataframe 'Dist.filters' saved in the folder specified by the outpath
+        ## Filters.Distance_Summary.Results.csv - 4 .csv file each with the Distance filter name in the title that has the summary statistics of  
+        ##                                        localization error when the specified filter was applied prior to trilateration. Each row represents  
+        ##                                        the summary statistics for all simulations for a given random point. Files are for your reference. 
 
 
 
@@ -252,7 +252,7 @@ RSS.filters <- trilateration.RSS.Filter(random.rss_results.all.sim)
         # DIST.FILTER = distances that are a multiple (x1.25, x2, x3, x4) of the average grid spacing
             # For each random test point the node with the strongest signal is identified and then only nodes
             # within the specified distance from the strongest node are kept for trilateration analysis
-Dist.filter <- trilateration.Distance.Filter(random.rss_results.all.sim)
+Dist.filters <- trilateration.Sim.Distance.Filter(random.rss_results.all.sim)
 
 
 
