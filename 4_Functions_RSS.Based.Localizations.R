@@ -1220,4 +1220,215 @@ return(summary.stats_results)
 
 
 
+##################################################################################
+# Function used in trilateration code to filter beep data that occurs 
+# prior to the Start Date of each TagId 
+################################################################################
+
+
+filter.dates <- function(x,y) {
+  beep.data <- x %>%
+    dplyr::left_join(y[,c("TagId", "StartDate")]) # Join Start Date for each bird with beep data
+  
+  # Make TagId factor
+  beep.data$TagId <- as.factor(beep.data$TagId)
+  
+  # Remove dates prior to start date and then remove startdate
+  beep.data <- beep.data %>%
+    dplyr::filter(Date >= StartDate) %>%
+    dplyr::select(-StartDate)
+}
+
+
+
+##################################################### 
+# Function to prepare data for trilateration 
+#####################################################
+
+prep.data <- function(x,y) {
+  
+  # supress warnings
+  options(warn = -1)
+  
+  # Sliding window over RSSI values for a given TagId and NodeId
+  # 1st argument: vector to iterate over and apply function
+  # 2nd argument: datetime index to break into periods
+  # 3rd argument: period to group by "hour", "minute", "second"
+  # function to apply
+  # the number of values before or after current element to include in sliding window
+  beep.slide <- x %>%
+    dplyr::group_by(TagId, NodeId) %>%
+    dplyr::arrange(Time.local) %>%
+    dplyr::mutate(roll.TagRSSI = slider::slide_index_dbl(TagRSSI, Time.local, mean,
+                                                         .after = lubridate::minutes(SLIDE.TIME), .before = lubridate::minutes(SLIDE.TIME))) %>%
+    ungroup()
+  
+  
+  # Average RSSI values by each minute for each TagId and NodeId
+  # ignore warning
+  beep.grouped <- beep.slide %>%
+    dplyr::group_by(TagId) %>%
+    padr::thicken(GROUP.TIME, colname="Time.group", by = "Time.local") %>%
+    dplyr::group_by(TagId, NodeId, Time.group, Date) %>%
+    dplyr::summarise(mean_rssi = mean(roll.TagRSSI), beep_count = length(roll.TagRSSI)) %>%
+    ungroup()
+  
+  
+  # calculate radius around a node given the exponential relationship between RSSI and distance
+  beep.grouped <- beep.grouped %>%
+    dplyr::mutate(e.dist = (log(mean_rssi - K) - log(a)) / -S)
+  
+  # Remove data with NAs produced from e.dist
+  beep.grouped <- beep.grouped[complete.cases(beep.grouped),]
+  
+  # Change negative distances to 10 (RSSI values > intercept of exponential curve and thus negative) - indicates very close to the node
+  beep.grouped <- beep.grouped %>%
+    dplyr::mutate(e.dist = dplyr::case_when(e.dist < 0 ~ 10,
+                                            e.dist >=0 ~ e.dist))
+  
+  # Add Node UTMs to data 
+  beep.grouped <- beep.grouped %>%
+    dplyr::left_join(y[,c("NodeId", "UTMx", "UTMy")])
+  
+  return(beep.grouped)
+  
+}
+
+
+
+
+###########################################
+# Function for trilateration 
+##########################################
+
+
+trilateration <- function(x) {
+  
+  # supress warnings
+  options(warn = -1)
+  
+  
+  # Identify the Nodes for the given dataset and filter nodes
+  nodes.unique <- unique(x$NodeId)
+  nodes.red <- nodes %>% dplyr::filter(NodeId %in% nodes.unique)
+  
+  # Calculate distance between nodes
+  dist.nodes <- raster::pointDistance(nodes.red[,2:3], nodes.red[,2:3], lonlat = F, allpairs = T)
+  
+  # Make matrix into a dataframe with a row for NodeId
+  dist.nodes_df <- data.frame(dist.nodes, row.names = nodes.red$NodeId)
+  colnames(dist.nodes_df) <- nodes.red$NodeId
+  dist.nodes_df$NodeId <- rownames(dist.nodes_df)
+  
+  # Create a vector of birds
+  beep.grouped$TagId <- as.factor(beep.grouped$TagId)
+  beep.grouped$TagId <- droplevels(beep.grouped$TagId)
+  bird <- unique(beep.grouped$TagId)
+  
+  
+  
+  # Create a dataframe for output estimates
+  estimated.location_results <- data.frame(TagId=character(), Time.group = POSIXct(), Hour = numeric(), No.Nodes = numeric(), UTMx_est=numeric(), UTMy_est=numeric(), 
+                                           x.LCI =numeric(), x.UCI =numeric(),  y.LCI = numeric(), y.UCI = numeric())
+  
+  # Loop through each bird
+  for (k in 1:length(bird)) {
+    
+    
+    # Filter data for the identified bird
+    sub.bird <- beep.grouped %>% dplyr::filter(TagId == bird[k])
+    sub.bird$TagId <- droplevels(sub.bird$TagId)
+    
+    # identify the unique bird and tests per bird
+    test.bird = unique(sub.bird$TagId)
+    tests = unique(sub.bird$Time.group)
+    
+    # Indicate bird that is currently being processed and how many unique time periods to process
+    print(as.character(test.bird))
+    print(length(tests))
+    
+    # Loop through unique time groups
+    
+    for(j in 1:length(tests)) {
+      
+      # Isolate the test 
+      sub.test <- sub.bird %>% dplyr::filter(Time.group == tests[j]) 
+      
+      # Determine the node with the strongest RSSI value
+      max.RSSI <- sub.test[which.max(sub.test$mean_rssi),]
+      
+      # Filter matrix of node distances by node with strongest avg.RSSI
+      # and get all nodes within a particular distance of that node
+      nodes.test <- dist.nodes_df %>%
+        dplyr::filter(NodeId %in% max.RSSI$NodeId) %>%
+        tidyr::gather(key = "NodeId", value = "distance", -NodeId) %>%
+        dplyr::filter(distance <= DIST.filter)
+      
+      # Only keep nodes that are within the specified distance of node with strongest avg.RSSI
+      sub.test.dist <- sub.test %>%
+        dplyr::filter(NodeId %in% nodes.test$NodeId)
+      
+      # Remove RSSI <= filter
+      sub.test.dist.rssi <- sub.test.dist %>%
+        dplyr::filter(mean_rssi >= RSS.filter)
+      
+      # Calculate no nodes for the test
+      no.nodes <- dplyr::n_distinct(sub.test.dist.rssi$NodeId)
+      
+      # Determine the hour of the observation
+      test.hour <- lubridate::hour(max.RSSI$Time.group)
+      
+      # If the number of nodes is not greater than 3 the rest of the loop will not be continued and the next
+      # iteration of the loop is started
+      if(no.nodes < 3) {
+        next
+      }
+      
+      # To deal with potential errors where the model fails due to bad starting values using tryCatch everything you want evaluated by tryCatch goes inside {},
+      # then the error will be printed but the loop will continue
+      
+      # Non-linear test to optimize the location of unknown signal by looking at the radius around each Node based on estimated distance and the pairwise distance between all nodes
+      tryCatch( {nls.test <- nls(e.dist ~ raster::pointDistance(data.frame(UTMx, UTMy), c(UTMx_solution, UTMy_solution), lonlat = F, allpairs = T),
+                                 data = sub.test.dist.rssi, start=list(UTMx_solution=max.RSSI$UTMx, UTMy_solution=max.RSSI$UTMy),
+                                 control=nls.control(warnOnly = T, minFactor=1/30000, maxiter = 100)) # gives a warning, but doesn't stop the test from providing an estimate based on the last itteration before the warning
+      
+      
+      # Determine an error around the point location estimate
+      par.est = cbind(coef(nls.test), confint2(nls.test))
+      UTMx.ci.upper =  par.est[1,3] 
+      UTMx.ci.lower =  par.est[1,2]
+      UTMy.ci.upper =  par.est[2,3] 
+      UTMy.ci.lower =  par.est[2,2] }
+      
+      ,error = function(e)  {cat("ERROR :",conditionMessage(e), "\n")})
+      
+      # estimated location of the point and error
+      estimated.loc <- data.frame(TagId = bird[k], Time.group = tests[j], Hour = test.hour, No.Nodes = no.nodes, UTMx_est = par.est[1,1], UTMy_est = par.est[2,1], 
+                                  x.LCI = UTMx.ci.lower, x.UCI = UTMx.ci.upper,  y.LCI = UTMy.ci.lower, y.UCI = UTMy.ci.upper)
+      
+      
+      # Populate dataframe with results
+      estimated.location_results <- rbind(estimated.location_results, estimated.loc)
+      
+    }
+    
+    
+    
+    # save estimated locations
+    saveRDS(estimated.location_results, paste0(outpath, "Estimated.Locations_", START, "_", END, ".rds"))
+    
+    
+  }
+  
+  return(estimated.location_results)
+  
+}
+
+
+
+
+
+
+
+
 
